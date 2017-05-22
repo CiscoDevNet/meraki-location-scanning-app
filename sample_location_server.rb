@@ -84,10 +84,10 @@
 # message like this:
 #
 #   [2013-03-26T11:51:57.920806 #25266]  INFO -- : AP 11:22:33:44:55:66 on ["5th Floor"]:
-#   {"ipv4"=>"123.45.67.89", "location"=>{"lat"=>37.77050089978862, "lng"=>-122.38686903158863, 
+#   {"ipv4"=>"123.45.67.89", "location"=>{"lat"=>37.77050089978862, "lng"=>-122.38686903158863,
 #   "unc"=>11.39537928078731}, "seenTime"=>"2014-05-15T15:48:14Z", "ssid"=>"Cisco WiFi",
 #   "os"=>"Linux", "clientMac"=>"aa:bb:cc:dd:ee:ff",
-#   "seenEpoch"=>1400168894, "rssi"=>16, "ipv6"=>nil, "manufacturer"=>"Meraki"} 
+#   "seenEpoch"=>1400168894, "rssi"=>16, "ipv6"=>nil, "manufacturer"=>"Meraki"}
 #
 # After your first client pushes start arriving (this may take a minute or two),
 # you can get a JSON blob describing the last client probe using:
@@ -113,7 +113,9 @@
 
 require 'rubygems'
 require 'sinatra'
-require 'data_mapper'
+require 'rom'
+require 'rom-sql'
+require 'rom-repository'
 require 'json'
 require 'digest/sha1'
 
@@ -151,35 +153,34 @@ else
 end
 puts "Writing database to #{db}"
 
-# ---- Load anonimization data --------
-
-# NAMES = CSV.read("initials.csv")
-# puts "Loaded #{NAMES.length} names"
 
 # ---- Set up the database -------------
 
-DataMapper.setup(:default, db)
-
-class Client
-  include DataMapper::Resource
-
-  property :id,         Serial                    # row key
-  property :mac,        String,  :key => true
-  property :seenString, String
-  property :seenEpoch,  Integer, :default => 0, :index => true
-  property :lat,        Float
-  property :lng,        Float
-  property :unc,        Float
-  property :manufacturer, String
-  property :os,         String
-  property :ssid,       String
-  property :floors,     String
+rom = ROM.container(:sql, 'sqlite::memory') do |conf|
+  conf.default.create_table(:clients) do
+    primary_key :id,         Integer, null: false                # row key
+    column :mac,   String,  null: false
+    column :seenString, String,  null: true
+    column :seenEpoch,  Integer, :default => 0, :index => true
+    column :lat,        Float,   null: true
+    column :lng,        Float,   null: true
+    column :unc,        Float,   null: true
+    column :manufacturer, String,   null: true
+    column :os,         String,   null: true
+    column :ssid,       String,   null: true
+    column :floors,     String,   null: true
+  end
 end
 
-DataMapper.finalize
+class ClientRepo < ROM::Repository[:clients]
+  def query(conditions)
+    clients.where(conditions).to_a
+  end
 
-DataMapper.auto_migrate!    # Creates your schema in the database
+  commands :create
+end
 
+client_repo = ClientRepo.new(rom)
 # ---- Set up routes -------------------
 
 # Serve the frontend.
@@ -215,28 +216,25 @@ post '/events' do
     logger.warn "got post for event that we're not interested in: #{map['type']}"
     return
   end
+
   map['data']['observations'].each do |c|
     loc = c['location']
-    next if loc == nil
     name = c['clientMac']
     lat = loc['lat']
     lng = loc['lng']
     seenString = c['seenTime']
     seenEpoch = c['seenEpoch']
     floors = map['data']['apFloors'] == nil ? "" : map['data']['apFloors'].join
-    logger.info "AP #{map['data']['apMac']} on #{map['data']['apFloors']}: #{c}"
-    next if (seenEpoch == nil || seenEpoch == 0)  # This probe is useless, so ignore it
-    client = Client.first_or_create(:mac => name)
-    if (seenEpoch > client.seenEpoch)             # If client was created, this will always be true
-      client.attributes = { :lat => lat, :lng => lng,
-                            :seenString => seenString, :seenEpoch => seenEpoch,
-                            :unc => loc['unc'],
-                            :manufacturer => c['manufacturer'], :os => c['os'],
-                            :ssid => c['ssid'],
-                            :floors => floors
-                          }
-      client.save
-    end
+    puts "AP #{map['data']['apMac']} on #{map['data']['apFloors']}: #{c}"
+    client_repo.create(mac: name, lat: lat, lng: lng,
+                            seenString: seenString, seenEpoch: seenEpoch,
+                            unc: loc['unc'],
+                            manufacturer: c['manufacturer'], os: c['os'],
+                            ssid: c['ssid'],
+                            floors: floors)
+
+
+
   end
   ""
 end
@@ -251,7 +249,7 @@ get '/clients/:mac' do |m|
   name = m.sub "%20", " "
   puts "Request name is #{name}"
   content_type :json
-  client = Client.first(:mac => name)
+  client = client_repo.query(mac: name)
   logger.info("Retrieved client #{client}")
   client != nil ? JSON.generate(client) : "{}"
 end
@@ -261,6 +259,6 @@ end
 # and returns a JSON blob of all clients.
 get %r{/clients/?} do
   content_type :json
-  clients = Client.all(:seenEpoch.gt => (Time.new - 300).to_i)
+  clients = client_repo.query(:seenEpoch => (Time.new - 300).to_i)
   JSON.generate(clients)
 end
