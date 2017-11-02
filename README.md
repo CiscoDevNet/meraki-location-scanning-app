@@ -30,6 +30,8 @@ This application show you how to get started using the [Cisco Meraki](https://me
 - Create a new directory for this project.
 - Clone the repo into this directory by running `git clone git@github.com:meraki/cmx-api-app.git` (this will clone the project into the subdirectory `cmx-api-app`).
 - Alternatively, [download the ZIP file](https://github.com/meraki/cmx-api-app/archive/master.zip) and unzip it into your project directory.
+- ```gem install bundler```
+- ```bundler install```
 
 ### Software requirements:
 
