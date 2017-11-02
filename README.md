@@ -30,16 +30,20 @@ This application show you how to get started using the [Cisco Meraki](https://me
 - Create a new directory for this project.
 - Clone the repo into this directory by running `git clone git@github.com:meraki/cmx-api-app.git` (this will clone the project into the subdirectory `cmx-api-app`).
 - Alternatively, [download the ZIP file](https://github.com/meraki/cmx-api-app/archive/master.zip) and unzip it into your project directory.
+- ```gem install bundler```
+- ```bundler install```
 
 ### Software requirements:
 
-- Ensure you have Ruby 1.9 installed. If you don’t, consider using [RVM](https://rvm.io) to install and manage your Ruby versions.
+- Ensure you have Ruby 2.4.1 installed. If you don’t, consider using [RVM](https://rvm.io) to install and manage your Ruby versions.
 
 #### Gems:
 
-- sinatra (if you don’t have it, run `gem install sinatra` via the command line in your project directory.)
-- data_mapper
-- dm-sqlite-adapter
+- sinatra
+- rom
+- rom-sql
+- rom-repository
+- sqlite3
 
 ### Network infrastructure requirements:
 

@@ -153,32 +153,54 @@ else
 end
 puts "Writing database to #{db}"
 
-
 # ---- Set up the database -------------
+#
+rom_conf = ROM::Configuration.new(:sql, db)
 
-rom = ROM.container(:sql, 'sqlite::memory') do |conf|
-  conf.default.create_table(:clients) do
-    primary_key :id,         Integer, null: false                # row key
-    column :mac,   String,  null: false
-    column :seenString, String,  null: true
-    column :seenEpoch,  Integer, :default => 0, :index => true
-    column :lat,        Float,   null: true
-    column :lng,        Float,   null: true
-    column :unc,        Float,   null: true
-    column :manufacturer, String,   null: true
-    column :os,         String,   null: true
-    column :ssid,       String,   null: true
-    column :floors,     String,   null: true
+migration = rom_conf.gateways[:default].migration do
+  change do
+    create_table?(:clients) do
+		primary_key :id,         Integer, null: false                # row key
+		column :mac,   String,  null: false
+		column :seenString, String,  null: true
+		column :seenEpoch,  Integer, :default => 0, :index => true
+		column :lat,        Float,   null: true
+		column :lng,        Float,   null: true
+		column :unc,        Float,   null: true
+		column :manufacturer, String,   null: true
+		column :os,         String,   null: true
+		column :ssid,       String,   null: true
+		column :floors,     String,   null: true
+    end
+  end
+end
+
+migration.apply(rom_conf.gateways[:default].connection, :up)
+
+rom_conf.gateways[:default].use_logger(Logger.new($stdout))
+
+class Clients < ROM::Relation[:sql]
+  schema(infer: true)
+
+  def by_id(id)
+    where(id: id)
   end
 end
 
 class ClientRepo < ROM::Repository[:clients]
-  def query(conditions)
-    clients.where(conditions).to_a
-  end
+   commands :create
 
-  commands :create
+   def query(conditions)
+     clients.where(conditions).to_a
+   end
+
+   def recent()
+       clients.where { seenEpoch > (Time.new.to_i - 600) }
+    end
 end
+
+rom_conf.register_relation(Clients)
+rom = ROM.container(rom_conf)
 
 client_repo = ClientRepo.new(rom)
 # ---- Set up routes -------------------
@@ -251,7 +273,7 @@ get '/clients/:mac' do |m|
   content_type :json
   client = client_repo.query(mac: name)
   logger.info("Retrieved client #{client}")
-  client != nil ? JSON.generate(client) : "{}"
+  client != nil ? client.first.to_h.to_json : "{}"
 end
 
 # This matches
@@ -259,6 +281,12 @@ end
 # and returns a JSON blob of all clients.
 get %r{/clients/?} do
   content_type :json
-  clients = client_repo.query(:seenEpoch => (Time.new - 300).to_i)
-  JSON.generate(clients)
+
+  h_clients = []
+
+  client_repo.recent.each do |client|
+      h_clients.push(client.to_h)
+  end
+
+  h_clients.to_json
 end
